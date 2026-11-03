@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" fill="none">
+  <rect width="800" height="480" fill="#0B101B"/>
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#1E2D45" stroke-width="0.75" stroke-opacity="0.55"/>
+    </pattern>
+  </defs>
+  <rect width="800" height="480" fill="url(#grid)"/>
+  <!-- App Window Chrome -->
+  <rect x="48" y="40" width="704" height="400" rx="10" fill="#111827" stroke="#243552" stroke-width="1.5"/>
+  <line x1="48" y1="80" x2="752" y2="80" stroke="#1E2D45" stroke-width="1.5"/>
+  <circle cx="74" cy="60" r="5" fill="#334155"/>
+  <circle cx="92" cy="60" r="5" fill="#334155"/>
+  <circle cx="110" cy="60" r="5" fill="#14D9C4"/>
+  <text x="134" y="64" fill="#8B9BB4" font-family="monospace" font-size="12">OrderOperationsTable.tsx — React + TypeScript</text>
+  <!-- Sidebar -->
+  <line x1="200" y1="80" x2="200" y2="440" stroke="#1E2D45" stroke-width="1.5"/>
+  <rect x="68" y="104" width="112" height="26" rx="5" fill="#14D9C4" fill-opacity="0.14" stroke="#14D9C4" stroke-opacity="0.5"/>
+  <rect x="80" y="114" width="64" height="6" rx="3" fill="#14D9C4"/>
+  <rect x="68" y="144" width="96" height="22" rx="4" fill="#162032"/>
+  <rect x="68" y="178" width="104" height="22" rx="4" fill="#162032"/>
+  <rect x="68" y="212" width="84" height="22" rx="4" fill="#162032"/>
+  <!-- Top KPI Strip -->
+  <rect x="224" y="102" width="156" height="72" rx="6" fill="#162032" stroke="#243552"/>
+  <text x="238" y="124" fill="#8B9BB4" font-family="monospace" font-size="10">ACTIVE ORDERS</text>
+  <text x="238" y="156" fill="#E6EDF7" font-family="monospace" font-weight="bold" font-size="24">1,284</text>
+  <text x="322" y="155" fill="#14D9C4" font-family="monospace" font-size="11">+12.4%</text>
+
+  <rect x="394" y="102" width="156" height="72" rx="6" fill="#162032" stroke="#243552"/>
+  <text x="408" y="124" fill="#8B9BB4" font-family="monospace" font-size="10">DISPATCH SLA</text>
+  <text x="408" y="156" fill="#14D9C4" font-family="monospace" font-weight="bold" font-size="24">98.7%</text>
+
+  <rect x="564" y="102" width="164" height="72" rx="6" fill="#162032" stroke="#243552"/>
+  <text x="578" y="124" fill="#8B9BB4" font-family="monospace" font-size="10">AVG RENDER</text>
+  <text x="578" y="156" fill="#F59E0B" font-family="monospace" font-weight="bold" font-size="24">14ms</text>
+
+  <!-- Data Table Rows -->
+  <rect x="224" y="194" width="504" height="218" rx="6" fill="#0E1524" stroke="#1E2D45"/>
+  <line x1="224" y1="230" x2="728" y2="230" stroke="#1E2D45"/>
+  <rect x="242" y="209" width="60" height="6" rx="3" fill="#64748B"/>
+  <rect x="350" y="209" width="80" height="6" rx="3" fill="#64748B"/>
+  <rect x="490" y="209" width="64" height="6" rx="3" fill="#64748B"/>
+  <rect x="620" y="209" width="72" height="6" rx="3" fill="#64748B"/>
+
+  <!-- Row 1 -->
+  <rect x="242" y="248" width="72" height="8" rx="4" fill="#E6EDF7"/>
+  <rect x="350" y="248" width="104" height="8" rx="4" fill="#8B9BB4"/>
+  <rect x="490" y="243" width="68" height="18" rx="9" fill="#14D9C4" fill-opacity="0.16"/>
+  <text x="504" y="255" fill="#14D9C4" font-family="monospace" font-size="10">SHIPPED</text>
+  <rect x="620" y="248" width="64" height="8" rx="4" fill="#14D9C4"/>
+  <line x1="224" y1="276" x2="728" y2="276" stroke="#1E2D45"/>
+
+  <!-- Row 2 -->
+  <rect x="242" y="294" width="68" height="8" rx="4" fill="#E6EDF7"/>
+  <rect x="350" y="294" width="92" height="8" rx="4" fill="#8B9BB4"/>
+  <rect x="490" y="289" width="68" height="18" rx="9" fill="#F59E0B" fill-opacity="0.16"/>
+  <text x="502" y="301" fill="#F59E0B" font-family="monospace" font-size="10">PACKING</text>
+  <rect x="620" y="294" width="52" height="8" rx="4" fill="#F59E0B"/>
+  <line x1="224" y1="322" x2="728" y2="322" stroke="#1E2D45"/>
+
+  <!-- Row 3 -->
+  <rect x="242" y="340" width="78" height="8" rx="4" fill="#E6EDF7"/>
+  <rect x="350" y="340" width="112" height="8" rx="4" fill="#8B9BB4"/>
+  <rect x="490" y="335" width="68" height="18" rx="9" fill="#14D9C4" fill-opacity="0.16"/>
+  <text x="504" y="347" fill="#14D9C4" font-family="monospace" font-size="10">SHIPPED</text>
+  <rect x="620" y="340" width="76" height="8" rx="4" fill="#14D9C4"/>
+  <line x1="224" y1="368" x2="728" y2="368" stroke="#1E2D45"/>
+
+  <!-- Row 4 -->
+  <rect x="242" y="384" width="64" height="8" rx="4" fill="#E6EDF7"/>
+  <rect x="350" y="384" width="86" height="8" rx="4" fill="#8B9BB4"/>
+  <rect x="490" y="379" width="68" height="18" rx="9" fill="#14D9C4" fill-opacity="0.16"/>
+  <text x="504" y="391" fill="#14D9C4" font-family="monospace" font-size="10">VERIFIED</text>
+  <rect x="620" y="384" width="58" height="8" rx="4" fill="#14D9C4"/>
+</svg>
+

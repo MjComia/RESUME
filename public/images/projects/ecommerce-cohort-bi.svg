@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" fill="none">
+  <rect width="800" height="480" fill="#0B101B"/>
+  <defs>
+    <pattern id="gridData" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#1E2D45" stroke-width="0.75" stroke-opacity="0.55"/>
+    </pattern>
+    <linearGradient id="amberArea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F59E0B" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#F59E0B" stop-opacity="0.0"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="480" fill="url(#gridData)"/>
+  <rect x="48" y="40" width="704" height="400" rx="10" fill="#111827" stroke="#2D3B55" stroke-width="1.5"/>
+  <line x1="48" y1="82" x2="752" y2="82" stroke="#1E2D45" stroke-width="1.5"/>
+  <text x="72" y="66" fill="#F59E0B" font-family="monospace" font-weight="bold" font-size="12">COHORT &amp; REVENUE TELEMETRY — SQL + POWER BI</text>
+  <text x="612" y="66" fill="#8B9BB4" font-family="monospace" font-size="11">n = 48,920 orders</text>
+
+  <!-- Chart Frame -->
+  <rect x="72" y="104" width="432" height="308" rx="6" fill="#0E1524" stroke="#1E2D45"/>
+  <text x="92" y="132" fill="#E6EDF7" font-family="monospace" font-size="12">Net Margin &amp; Repeat Cohort Retention</text>
+  <line x1="96" y1="364" x2="480" y2="364" stroke="#243552"/>
+  <line x1="96" y1="306" x2="480" y2="306" stroke="#1E2D45" stroke-dasharray="4 4"/>
+  <line x1="96" y1="248" x2="480" y2="248" stroke="#1E2D45" stroke-dasharray="4 4"/>
+  <line x1="96" y1="190" x2="480" y2="190" stroke="#1E2D45" stroke-dasharray="4 4"/>
+
+  <path d="M96 332 L160 310 L224 288 L288 260 L352 224 L416 198 L480 172 L480 364 L96 364 Z" fill="url(#amberArea)"/>
+  <path d="M96 332 L160 310 L224 288 L288 260 L352 224 L416 198 L480 172" stroke="#F59E0B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M96 346 L160 330 L224 322 L288 298 L352 280 L416 254 L480 236" stroke="#14D9C4" stroke-width="2" stroke-dasharray="6 4"/>
+
+  <circle cx="288" cy="260" r="4.5" fill="#0B101B" stroke="#F59E0B" stroke-width="2.5"/>
+  <circle cx="416" cy="198" r="4.5" fill="#0B101B" stroke="#F59E0B" stroke-width="2.5"/>
+  <circle cx="480" cy="172" r="5.5" fill="#F59E0B"/>
+
+  <text x="96" y="386" fill="#8B9BB4" font-family="monospace" font-size="10">M1</text>
+  <text x="220" y="386" fill="#8B9BB4" font-family="monospace" font-size="10">M3</text>
+  <text x="346" y="386" fill="#8B9BB4" font-family="monospace" font-size="10">M5</text>
+  <text x="466" y="386" fill="#8B9BB4" font-family="monospace" font-size="10">M7</text>
+
+  <!-- Right Insight Cards -->
+  <rect x="524" y="104" width="204" height="94" rx="6" fill="#162032" stroke="#F59E0B" stroke-opacity="0.45"/>
+  <text x="542" y="128" fill="#8B9BB4" font-family="monospace" font-size="10">90-DAY RETENTION</text>
+  <text x="542" y="164" fill="#F59E0B" font-family="monospace" font-weight="bold" font-size="28">34.8%</text>
+  <text x="542" y="184" fill="#14D9C4" font-family="monospace" font-size="10">+6.2 pts YoY</text>
+
+  <rect x="524" y="212" width="204" height="94" rx="6" fill="#162032" stroke="#243552"/>
+  <text x="542" y="236" fill="#8B9BB4" font-family="monospace" font-size="10">PARETO SKU SHARE</text>
+  <text x="542" y="272" fill="#E6EDF7" font-family="monospace" font-weight="bold" font-size="28">18.4%</text>
+  <text x="542" y="292" fill="#8B9BB4" font-family="monospace" font-size="10">drives 71% net margin</text>
+
+  <rect x="524" y="320" width="204" height="92" rx="6" fill="#162032" stroke="#243552"/>
+  <text x="542" y="344" fill="#8B9BB4" font-family="monospace" font-size="10">SQL PIPELINE RUNTIME</text>
+  <text x="542" y="380" fill="#14D9C4" font-family="monospace" font-weight="bold" font-size="26">1.4s</text>
+  <text x="542" y="398" fill="#8B9BB4" font-family="monospace" font-size="10">indexed CTE windowing</text>
+</svg>
+

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" fill="none">
+  <rect width="800" height="420" fill="#0B101B"/>
+  <defs>
+    <pattern id="bgrid1" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#1E2D45" stroke-width="0.7" stroke-opacity="0.5"/>
+    </pattern>
+  </defs>
+  <rect width="800" height="420" fill="url(#bgrid1)"/>
+  <!-- Component Tree Diagram -->
+  <rect x="290" y="54" width="220" height="54" rx="8" fill="#162032" stroke="#14D9C4" stroke-width="1.75"/>
+  <text x="322" y="86" fill="#14D9C4" font-family="monospace" font-weight="bold" font-size="15">&lt;DataWorkspace /&gt;</text>
+
+  <path d="M400 108 L400 148 M400 148 L190 148 L190 184 M400 148 L400 184 M400 148 L610 148 L610 184" stroke="#2C4263" stroke-width="2"/>
+
+  <rect x="96" y="184" width="188" height="52" rx="7" fill="#111827" stroke="#243552" stroke-width="1.5"/>
+  <text x="124" y="215" fill="#E6EDF7" font-family="monospace" font-size="13">&lt;FilterToolbar /&gt;</text>
+
+  <rect x="306" y="184" width="188" height="52" rx="7" fill="#111827" stroke="#14D9C4" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="336" y="215" fill="#E6EDF7" font-family="monospace" font-size="13">&lt;VirtualTable /&gt;</text>
+
+  <rect x="516" y="184" width="188" height="52" rx="7" fill="#111827" stroke="#F59E0B" stroke-opacity="0.6" stroke-width="1.5"/>
+  <text x="542" y="215" fill="#F59E0B" font-family="monospace" font-size="13">&lt;SummaryKPIs /&gt;</text>
+
+  <path d="M400 236 L400 292" stroke="#14D9C4" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <rect x="236" y="292" width="328" height="68" rx="8" fill="#0E1524" stroke="#1E2D45" stroke-width="1.5"/>
+  <text x="262" y="322" fill="#8B9BB4" font-family="monospace" font-size="12">URL SearchParams + Typed Reducer</text>
+  <text x="262" y="344" fill="#14D9C4" font-family="monospace" font-size="12">Zero prop-drilling · Predictable state</text>
+</svg>
+
