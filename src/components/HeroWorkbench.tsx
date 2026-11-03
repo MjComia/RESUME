@@ -8,22 +8,10 @@ import { PROFILE_DATA } from "@/data/seed";
 
 type WorkbenchLens = "split" | "dev" | "data";
 
-const TELEMETRY_SERIES = [
-  { period: "Jun", commits: 38, queries: 22 },
-  { period: "Jul", commits: 52, queries: 34 },
-  { period: "Aug", commits: 64, queries: 48 },
-  { period: "Sep", commits: 59, queries: 61 },
-  { period: "Oct", commits: 78, queries: 74 },
-  { period: "Nov", commits: 86, queries: 89 },
-];
-
 export function HeroWorkbench() {
   const { stats } = usePortfolio();
   const [lens, setLens] = useState<WorkbenchLens>("split");
   const [codeTab, setCodeTab] = useState<"tsx" | "sql">("tsx");
-  const [activePoint, setActivePoint] = useState<number>(
-    TELEMETRY_SERIES.length - 1
-  );
 
   const reactSnippet = `// Easycom-inspired modular telemetry hook
 export function usePortfolioMetrics() {
@@ -37,45 +25,14 @@ export function usePortfolioMetrics() {
   return <KpiWorkbench data={summary} />;
 }`;
 
-  const sqlSnippet = `-- Monthly build & analytical query cadence
+  const sqlSnippet = `-- Portfolio breakdown by domain category
 SELECT
   category,
-  COUNT(id) AS total_artifacts,
-  ROUND(AVG(impact_score), 1) AS kpi_index
-FROM mj_portfolio_items
-WHERE status = 'SHIPPED'
+  COUNT(id) AS total_projects,
+  SUM(insights_count) AS logged_insights
+FROM mj_portfolio_projects
 GROUP BY category
-ORDER BY total_artifacts DESC;`;
-
-  // Chart geometry
-  const chartW = 320;
-  const chartH = 148;
-  const padX = 24;
-  const padY = 18;
-  const innerW = chartW - padX * 2;
-  const innerH = chartH - padY * 2;
-  const maxVal = 100;
-
-  const coordsFor = (key: "commits" | "queries") =>
-    TELEMETRY_SERIES.map((d, idx) => {
-      const x = padX + (idx / (TELEMETRY_SERIES.length - 1)) * innerW;
-      const y = padY + innerH - (d[key] / maxVal) * innerH;
-      return { x, y, ...d };
-    });
-
-  const commitPts = coordsFor("commits");
-  const queryPts = coordsFor("queries");
-
-  const toPath = (pts: { x: number; y: number }[]) =>
-    pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-
-  const dataAreaPath = `${toPath(queryPts)} L${queryPts[
-    queryPts.length - 1
-  ].x.toFixed(1)},${(padY + innerH).toFixed(1)} L${queryPts[0].x.toFixed(
-    1
-  )},${(padY + innerH).toFixed(1)} Z`;
-
-  const selected = TELEMETRY_SERIES[activePoint] ?? TELEMETRY_SERIES[5];
+ORDER BY total_projects DESC;`;
 
   return (
     <section
@@ -138,9 +95,7 @@ ORDER BY total_artifacts DESC;`;
               <div className="flex items-center gap-2 font-mono text-xs text-muted">
                 <span className="inline-block w-2 h-2 rounded-full bg-code" />
                 <span className="inline-block w-2 h-2 rounded-full bg-data" />
-                <span className="text-ink font-medium">
-                  mj.workbench
-                </span>
+                <span className="text-ink font-medium">mj.workbench</span>
                 <span className="hidden sm:inline text-faint">
                   / code-meets-data
                 </span>
@@ -264,201 +219,94 @@ ORDER BY total_artifacts DESC;`;
                 </div>
               )}
 
-              {/* RIGHT PANE: Mini Analytical Dashboard (Line Chart + KPI Cards) */}
+              {/* RIGHT PANE: Live Portfolio KPI Readout (No Sample Chart) */}
               {(lens === "split" || lens === "data") && (
                 <div className="p-4 flex flex-col justify-between bg-panel">
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-3">
-                      <div>
-                        <div className="font-mono text-xs font-semibold text-ink">
-                          Output &amp; Query Telemetry
-                        </div>
-                        <div className="font-mono text-[11px] text-muted">
-                          Hover points · {selected.period}:{" "}
-                          <span className="text-code tabular-nums">
-                            {selected.commits} commits
-                          </span>{" "}
-                          ·{" "}
-                          <span className="text-data tabular-nums">
-                            {selected.queries} SQL runs
-                          </span>
-                        </div>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="font-mono text-xs font-semibold text-ink">
+                        Live Portfolio Snapshot
+                      </div>
+                      <div className="font-mono text-[11px] text-muted">
+                        Synced from active projects, stack &amp; articles
                       </div>
                     </div>
 
-                    {/* Mini KPI Cards inside Dashboard */}
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                      <div className="p-2.5 rounded-xs bg-elevated/70 border border-hairline">
+                    {/* 2x2 Real KPI Grid */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="p-3 rounded-xs bg-elevated/70 border border-hairline">
                         <div className="font-mono text-[10px] text-muted">
-                          Projects
+                          Total Projects
                         </div>
-                        <div className="font-mono text-lg font-bold text-ink tabular-nums">
+                        <div className="mt-1 font-mono text-xl font-bold text-ink tabular-nums">
                           {stats.projectsBuilt}
                         </div>
-                      </div>
-                      <div className="p-2.5 rounded-xs bg-elevated/70 border border-hairline">
-                        <div className="font-mono text-[10px] text-muted">
-                          Data Share
-                        </div>
-                        <div className="font-mono text-lg font-bold text-data tabular-nums">
-                          {stats.projectsBuilt > 0
-                            ? Math.round(
-                                (stats.dataProjects / stats.projectsBuilt) * 100
-                              )
-                            : 0}
-                          %
+                        <div className="mt-0.5 font-mono text-[10px] text-code tabular-nums">
+                          {stats.webProjects} web · {stats.dataProjects} data
                         </div>
                       </div>
-                      <div className="p-2.5 rounded-xs bg-elevated/70 border border-hairline">
+
+                      <div className="p-3 rounded-xs bg-elevated/70 border border-hairline">
                         <div className="font-mono text-[10px] text-muted">
                           Stack Tools
                         </div>
-                        <div className="font-mono text-lg font-bold text-code tabular-nums">
+                        <div className="mt-1 font-mono text-xl font-bold text-code tabular-nums">
                           {stats.technologiesUsed}
+                        </div>
+                        <div className="mt-0.5 font-mono text-[10px] text-muted">
+                          Languages, web &amp; BI
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-xs bg-elevated/70 border border-hairline">
+                        <div className="font-mono text-[10px] text-muted">
+                          Articles Written
+                        </div>
+                        <div className="mt-1 font-mono text-xl font-bold text-ink tabular-nums">
+                          {stats.publishedPosts}
+                        </div>
+                        <div className="mt-0.5 font-mono text-[10px] text-muted">
+                          Engineering &amp; SQL notes
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-xs bg-elevated/70 border border-hairline">
+                        <div className="font-mono text-[10px] text-muted">
+                          Logged Insights
+                        </div>
+                        <div className="mt-1 font-mono text-xl font-bold text-data tabular-nums">
+                          {stats.insightsDocumented}
+                        </div>
+                        <div className="mt-0.5 font-mono text-[10px] text-data">
+                          Case study findings
                         </div>
                       </div>
                     </div>
 
-                    {/* Interactive SVG Line + Area Chart */}
-                    <div className="rounded-sm border border-hairline bg-canvas/70 p-2">
-                      <svg
-                        viewBox={`0 0 ${chartW} ${chartH}`}
-                        className="w-full h-auto overflow-visible"
-                        role="img"
-                        aria-label="Line chart of monthly React commits and SQL analytical runs"
-                      >
-                        <defs>
-                          <linearGradient
-                            id="heroDataGrad"
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor="rgb(var(--color-data))"
-                              stopOpacity="0.28"
-                            />
-                            <stop
-                              offset="100%"
-                              stopColor="rgb(var(--color-data))"
-                              stopOpacity="0"
-                            />
-                          </linearGradient>
-                        </defs>
-
-                        {/* Horizontal reference lines */}
-                        {[0.25, 0.5, 0.75].map((r) => {
-                          const y = padY + innerH * (1 - r);
-                          return (
-                            <line
-                              key={r}
-                              x1={padX}
-                              y1={y}
-                              x2={chartW - padX}
-                              y2={y}
-                              stroke="rgb(var(--color-hairline))"
-                              strokeDasharray="3 3"
-                              strokeWidth="1"
-                            />
-                          );
-                        })}
-
-                        {/* Active vertical crosshair */}
-                        {queryPts[activePoint] && (
-                          <line
-                            x1={queryPts[activePoint].x}
-                            y1={padY}
-                            x2={queryPts[activePoint].x}
-                            y2={padY + innerH}
-                            stroke="rgb(var(--color-faint))"
-                            strokeDasharray="2 2"
-                            strokeWidth="1"
-                          />
-                        )}
-
-                        {/* Area + Series paths */}
-                        <path d={dataAreaPath} fill="url(#heroDataGrad)" />
-                        <path
-                          d={toPath(commitPts)}
-                          fill="none"
-                          stroke="rgb(var(--color-code))"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                        />
-                        <path
-                          d={toPath(queryPts)}
-                          fill="none"
-                          stroke="rgb(var(--color-data))"
-                          strokeWidth="2.25"
-                          strokeLinecap="round"
-                        />
-
-                        {/* Interactive points + X-axis labels */}
-                        {TELEMETRY_SERIES.map((d, idx) => {
-                          const cp = commitPts[idx];
-                          const qp = queryPts[idx];
-                          const isSelected = activePoint === idx;
-                          return (
-                            <g
-                              key={d.period}
-                              className="cursor-pointer"
-                              onMouseEnter={() => setActivePoint(idx)}
-                              onClick={() => setActivePoint(idx)}
-                            >
-                              <rect
-                                x={cp.x - 16}
-                                y={padY}
-                                width={32}
-                                height={innerH + 16}
-                                fill="transparent"
-                              />
-                              <circle
-                                cx={cp.x}
-                                cy={cp.y}
-                                r={isSelected ? 4.5 : 3}
-                                fill="rgb(var(--color-code))"
-                              />
-                              <circle
-                                cx={qp.x}
-                                cy={qp.y}
-                                r={isSelected ? 5 : 3.2}
-                                fill="rgb(var(--color-data))"
-                              />
-                              <text
-                                x={cp.x}
-                                y={chartH - 2}
-                                textAnchor="middle"
-                                className={`font-mono text-[9px] fill-current ${
-                                  isSelected
-                                    ? "text-ink font-semibold"
-                                    : "text-faint"
-                                }`}
-                              >
-                                {d.period}
-                              </text>
-                            </g>
-                          );
-                        })}
-                      </svg>
+                    {/* Domain Focus Summary */}
+                    <div className="rounded-xs border border-hairline bg-canvas/60 divide-y divide-hairline font-mono text-[11px]">
+                      <div className="px-3 py-2 flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1.5 text-ink">
+                          <span className="w-1.5 h-1.5 rounded-full bg-code" />
+                          Web Engineering
+                        </span>
+                        <span className="text-muted">React · Next.js · SQL</span>
+                      </div>
+                      <div className="px-3 py-2 flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1.5 text-ink">
+                          <span className="w-1.5 h-1.5 rounded-full bg-data" />
+                          Data Analytics
+                        </span>
+                        <span className="text-muted">SQL · Excel · Power BI</span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Legend */}
+                  {/* Footer Status */}
                   <div className="mt-3 pt-2.5 border-t border-hairline flex items-center justify-between font-mono text-[11px] text-muted">
-                    <div className="flex items-center gap-3">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="w-2.5 h-0.5 bg-code inline-block" />
-                        React commits
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="w-2.5 h-0.5 bg-data inline-block" />
-                        SQL / BI runs
-                      </span>
-                    </div>
+                    <span>github.com/MjComia</span>
                     <span className="tabular-nums text-data">
-                      +{stats.insightsDocumented} insights logged
+                      Real-time store
                     </span>
                   </div>
                 </div>
@@ -470,4 +318,3 @@ ORDER BY total_artifacts DESC;`;
     </section>
   );
 }
-

@@ -14,50 +14,51 @@ import {
   FolderKanban,
   ImagePlus,
   Inbox,
+  Layers,
   Lock,
   LogOut,
   Plus,
-  RotateCcw,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { Navbar } from "@/components/Navbar";
 import { usePortfolio } from "@/context/PortfolioContext";
-import {
-  compressImageFile,
-  estimateReadingTime,
-  slugify,
-} from "@/lib/image";
+import { estimateReadingTime, slugify } from "@/lib/image";
 import {
   hasAdminSession,
   setAdminSession,
   updateAdminPassword,
+  uploadAssetFile,
   verifyAdminPassword,
 } from "@/lib/storage";
-import { SUPABASE_SETUP_SQL } from "@/lib/supabase";
 import {
   BlogPost,
   PostStatus,
   Project,
   ProjectCategory,
   ProjectInsight,
+  SkillCategoryGroup,
 } from "@/types/portfolio";
 
-type AdminTab = "projects" | "blog" | "inbox";
+type AdminTab = "projects" | "blog" | "stack" | "inbox";
 type EditorView = "split" | "write" | "preview";
 
 export default function AdminPage() {
   const {
+    skills,
     projects,
     posts,
     messages,
+    stats,
+    isReadOnlyHost,
     storageBackend,
+    saveSkills,
     saveProject,
     deleteProject,
     savePost,
     deletePost,
-    resetData,
   } = usePortfolio();
 
   const [authenticated, setAuthenticated] = useState(false);
@@ -68,7 +69,7 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>("projects");
   const [toast, setToast] = useState<string | null>(null);
 
-  // Project Form State
+  // ==================== PROJECT FORM STATE ====================
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [projTitle, setProjTitle] = useState("");
   const [projSummary, setProjSummary] = useState("");
@@ -85,12 +86,13 @@ export default function AdminPage() {
     null
   );
 
-  // Blog Post Form State
+  // ==================== BLOG POST FORM STATE ====================
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [postTitle, setPostTitle] = useState("");
   const [postExcerpt, setPostExcerpt] = useState("");
   const [postCover, setPostCover] = useState("");
   const [postTags, setPostTags] = useState("");
+  const [postDate, setPostDate] = useState("");
   const [postContent, setPostContent] = useState("");
   const [editorView, setEditorView] = useState<EditorView>("split");
   const [postFormError, setPostFormError] = useState("");
@@ -98,9 +100,30 @@ export default function AdminPage() {
     null
   );
 
-  // Admin Settings State
+  // ==================== TECH STACK MANAGER STATE ====================
+  const [quickCategoryId, setQuickCategoryId] = useState<string>("");
+  const [quickToolsInput, setQuickToolsInput] = useState<string>("");
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [groupTitleDraft, setGroupTitleDraft] = useState("");
+  const [groupDescDraft, setGroupDescDraft] = useState("");
+  const [groupAccentDraft, setGroupAccentDraft] = useState<"code" | "data">(
+    "code"
+  );
+  const [groupItemsDraft, setGroupItemsDraft] = useState("");
+
+  // Add new category form
+  const [newCategoryTitle, setNewCategoryTitle] = useState("");
+  const [newCategoryDesc, setNewCategoryDesc] = useState("");
+  const [newCategoryAccent, setNewCategoryAccent] = useState<"code" | "data">(
+    "code"
+  );
+  const [newCategoryItems, setNewCategoryItems] = useState("");
+  const [confirmDeleteGroupId, setConfirmDeleteGroupId] = useState<
+    string | null
+  >(null);
+
+  // ==================== SETTINGS STATE ====================
   const [newAdminPass, setNewAdminPass] = useState("");
-  const [showSqlModal, setShowSqlModal] = useState(false);
 
   const markdownRef = useRef<HTMLTextAreaElement | null>(null);
   const formTopRef = useRef<HTMLDivElement | null>(null);
@@ -110,11 +133,17 @@ export default function AdminPage() {
     setCheckedAuth(true);
   }, []);
 
+  useEffect(() => {
+    if (!quickCategoryId && skills.length > 0) {
+      setQuickCategoryId(skills[0].id);
+    }
+  }, [skills, quickCategoryId]);
+
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => {
       setToast((curr) => (curr === msg ? null : curr));
-    }, 2800);
+    }, 3000);
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -136,7 +165,7 @@ export default function AdminPage() {
     setAuthenticated(false);
   };
 
-  // Project Helpers
+  // ==================== PROJECT ACTIONS ====================
   const resetProjectForm = () => {
     setEditingProjectId(null);
     setProjTitle("");
@@ -174,8 +203,8 @@ export default function AdminPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const compressed = await compressImageFile(file);
-      setProjThumb(compressed);
+      const url = await uploadAssetFile(file);
+      setProjThumb(url);
       showToast("Project image uploaded");
     } catch (err) {
       setProjFormError(
@@ -206,6 +235,8 @@ export default function AdminPage() {
       (ins) => ins.metric.trim() && ins.label.trim()
     );
 
+    const thumbUrl = projThumb.trim() || "/images/projects/react-ops-board.svg";
+
     const payload: Project = {
       id: existing?.id ?? `proj-${Date.now()}`,
       slug: existing?.slug ?? slugify(projTitle),
@@ -214,10 +245,8 @@ export default function AdminPage() {
       description: projDesc.trim() || projSummary.trim(),
       category: projCategory,
       tags: cleanTags.length > 0 ? cleanTags : [projCategory],
-      thumbnail: projThumb.trim() || "/images/projects/react-ops-board.svg",
-      screenshots: [
-        projThumb.trim() || "/images/projects/react-ops-board.svg",
-      ],
+      thumbnail: thumbUrl,
+      screenshots: [thumbUrl],
       liveUrl: projLive.trim() || undefined,
       githubUrl: projGithub.trim() || undefined,
       featured: projFeatured,
@@ -225,18 +254,27 @@ export default function AdminPage() {
       createdAt: existing?.createdAt ?? new Date().toISOString().slice(0, 10),
     };
 
-    await saveProject(payload);
-    showToast(existing ? "Project updated" : "Project added");
+    const savedToDisk = await saveProject(payload);
+    showToast(
+      existing
+        ? savedToDisk
+          ? "Project updated in portfolio-db.json"
+          : "Project updated in browser preview"
+        : savedToDisk
+        ? "Project saved to portfolio-db.json"
+        : "Project saved to browser preview"
+    );
     resetProjectForm();
   };
 
-  // Blog Post Helpers
+  // ==================== BLOG POST ACTIONS ====================
   const resetPostForm = () => {
     setEditingPostId(null);
     setPostTitle("");
     setPostExcerpt("");
     setPostCover("");
     setPostTags("");
+    setPostDate("");
     setPostContent("");
     setPostFormError("");
   };
@@ -247,6 +285,7 @@ export default function AdminPage() {
     setPostExcerpt(post.excerpt);
     setPostCover(post.coverImage);
     setPostTags(post.tags.join(", "));
+    setPostDate(post.date);
     setPostContent(post.content);
     setPostFormError("");
     formTopRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -258,8 +297,8 @@ export default function AdminPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const compressed = await compressImageFile(file);
-      setPostCover(compressed);
+      const url = await uploadAssetFile(file);
+      setPostCover(url);
       showToast("Cover image uploaded");
     } catch (err) {
       setPostFormError(
@@ -274,8 +313,8 @@ export default function AdminPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const compressed = await compressImageFile(file, 960, 0.8);
-      insertMarkdownSnippet(`\n![${file.name}](${compressed})\n`);
+      const url = await uploadAssetFile(file);
+      insertMarkdownSnippet(`\n![${file.name}](${url})\n`);
       showToast("Inline image inserted into Markdown");
     } catch {
       // Ignore invalid file
@@ -334,23 +373,148 @@ export default function AdminPage() {
       content: postContent,
       coverImage:
         postCover.trim() || "/images/blog/react-architecture-cover.svg",
-      date: existing?.date ?? today,
+      date: postDate.trim() || existing?.date || today,
       readingTime: estimateReadingTime(postContent),
       tags: cleanTags.length > 0 ? cleanTags : ["Notes"],
       status,
       updatedAt: today,
     };
 
-    await savePost(payload);
-    showToast(status === "published" ? "Published" : "Draft saved");
+    const savedToDisk = await savePost(payload);
+    showToast(
+      status === "published"
+        ? savedToDisk
+          ? "Published to portfolio-db.json"
+          : "Published in browser preview"
+        : savedToDisk
+        ? "Draft saved to portfolio-db.json"
+        : "Draft saved in browser preview"
+    );
     resetPostForm();
+  };
+
+  // ==================== TECH STACK ACTIONS ====================
+  const handleQuickAddTech = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetId = quickCategoryId || skills[0]?.id;
+    const rawItems = quickToolsInput
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    if (!targetId || rawItems.length === 0) return;
+
+    const nextSkills = skills.map((group) => {
+      if (group.id !== targetId) return group;
+      const existingLower = new Set(group.items.map((i) => i.toLowerCase()));
+      const additions = rawItems.filter(
+        (item) => !existingLower.has(item.toLowerCase())
+      );
+      return {
+        ...group,
+        items: [...group.items, ...additions],
+      };
+    });
+
+    await saveSkills(nextSkills);
+    setQuickToolsInput("");
+    showToast("Tech stack updated & total recounted");
+  };
+
+  const handleRemoveSingleTech = async (groupId: string, itemToRemove: string) => {
+    const nextSkills = skills.map((group) =>
+      group.id === groupId
+        ? {
+            ...group,
+            items: group.items.filter((item) => item !== itemToRemove),
+          }
+        : group
+    );
+    await saveSkills(nextSkills);
+    showToast(`Removed "${itemToRemove}"`);
+  };
+
+  const startEditSkillGroup = (group: SkillCategoryGroup) => {
+    setEditingGroupId(group.id);
+    setGroupTitleDraft(group.category);
+    setGroupDescDraft(group.description);
+    setGroupAccentDraft(group.accent);
+    setGroupItemsDraft(group.items.join(", "));
+  };
+
+  const handleSaveSkillGroup = async (groupId: string) => {
+    if (!groupTitleDraft.trim()) return;
+    const parsedItems = groupItemsDraft
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const nextSkills = skills.map((group) =>
+      group.id === groupId
+        ? {
+            ...group,
+            category: groupTitleDraft.trim(),
+            description: groupDescDraft.trim(),
+            accent: groupAccentDraft,
+            items: parsedItems,
+          }
+        : group
+    );
+
+    await saveSkills(nextSkills);
+    setEditingGroupId(null);
+    showToast("Category updated & stack recounted");
+  };
+
+  const handleCreateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCategoryTitle.trim()) return;
+
+    const parsedItems = newCategoryItems
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const newGroup: SkillCategoryGroup = {
+      id: `${slugify(newCategoryTitle)}-${Date.now().toString().slice(-4)}`,
+      category: newCategoryTitle.trim(),
+      description:
+        newCategoryDesc.trim() || "Tools and technologies used in projects",
+      accent: newCategoryAccent,
+      items: parsedItems,
+    };
+
+    const nextSkills = [...skills, newGroup];
+    await saveSkills(nextSkills);
+    setNewCategoryTitle("");
+    setNewCategoryDesc("");
+    setNewCategoryItems("");
+    showToast("Added new tech stack category");
+  };
+
+  const handleDownloadDbJson = () => {
+    const dbPayload = {
+      skills,
+      projects,
+      posts,
+    };
+    const blob = new Blob([JSON.stringify(dbPayload, null, 2) + "\n"], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "portfolio-db.json";
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Downloaded portfolio-db.json");
   };
 
   if (!checkedAuth) {
     return null;
   }
 
-  // Password Login View
+  // ==================== PASSWORD GATE ====================
   if (!authenticated) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -372,8 +536,8 @@ export default function AdminPage() {
             </div>
 
             <p className="text-sm text-muted leading-relaxed">
-              Sign in with your workspace password to add projects, write
-              Markdown articles, and manage portfolio content.
+              Sign in with your workspace password to manage projects, blog
+              articles, and your technical stack.
             </p>
 
             {authError && (
@@ -396,6 +560,7 @@ export default function AdminPage() {
                 <input
                   id="admin-password"
                   type="password"
+                  suppressHydrationWarning
                   required
                   autoFocus
                   value={passwordInput}
@@ -407,6 +572,7 @@ export default function AdminPage() {
 
               <button
                 type="submit"
+                suppressHydrationWarning
                 className="w-full py-2.5 rounded-sm font-mono text-xs sm:text-sm font-semibold bg-code text-[#071214] hover:opacity-90 transition-opacity"
               >
                 Unlock workspace
@@ -421,7 +587,7 @@ export default function AdminPage() {
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Return to portfolio</span>
               </Link>
-              <span>Storage: {storageBackend}</span>
+              <span>DB: {storageBackend}</span>
             </div>
           </div>
         </main>
@@ -451,7 +617,7 @@ export default function AdminPage() {
           className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-hairline"
         >
           <div>
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="font-mono text-2xl font-bold text-ink">
                 Content Management
               </h1>
@@ -461,8 +627,9 @@ export default function AdminPage() {
               </span>
             </div>
             <p className="text-sm text-muted mt-1">
-              Changes save immediately and update portfolio sections and KPI
-              counters in real time.
+              {isReadOnlyHost
+                ? "Read-only host detected: edits preview in your browser. Edit on localhost:3000/admin (or download portfolio-db.json) and git push to publish globally."
+                : "Local workspace active: edits save straight into src/data/portfolio-db.json—commit and git push to update Vercel."}
             </p>
           </div>
 
@@ -515,6 +682,19 @@ export default function AdminPage() {
 
           <button
             type="button"
+            onClick={() => setActiveTab("stack")}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-sm font-mono text-xs border transition-colors ${
+              activeTab === "stack"
+                ? "bg-code/15 text-code border-code/50 font-semibold"
+                : "bg-panel text-muted border-hairline hover:text-ink"
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Tech Stack ({stats.technologiesUsed})</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab("inbox")}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-sm font-mono text-xs border transition-colors ${
               activeTab === "inbox"
@@ -523,7 +703,7 @@ export default function AdminPage() {
             }`}
           >
             <Inbox className="w-3.5 h-3.5" />
-            <span>Inbox &amp; Settings ({messages.length})</span>
+            <span>Inbox &amp; JSON DB ({messages.length})</span>
           </button>
         </div>
 
@@ -537,18 +717,26 @@ export default function AdminPage() {
             >
               <div className="flex items-center justify-between pb-3 border-b border-hairline">
                 <h2 className="font-mono text-base font-semibold text-ink">
-                  {editingProjectId ? "Edit Project" : "Add Project"}
+                  {editingProjectId ? "Edit Posted Project" : "Add New Project"}
                 </h2>
                 {editingProjectId && (
                   <button
                     type="button"
                     onClick={resetProjectForm}
-                    className="font-mono text-xs text-muted hover:text-ink"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xs bg-elevated border border-hairline font-mono text-xs text-muted hover:text-ink"
                   >
-                    Cancel edit
+                    <X className="w-3 h-3" />
+                    <span>Cancel edit</span>
                   </button>
                 )}
               </div>
+
+              {editingProjectId && (
+                <div className="p-3 rounded-sm bg-code/10 border border-code/40 font-mono text-xs text-code">
+                  Editing existing project — click &ldquo;Save changes&rdquo;
+                  below to update it immediately.
+                </div>
+              )}
 
               {projFormError && (
                 <div
@@ -635,7 +823,7 @@ export default function AdminPage() {
 
               <div>
                 <label className="block font-mono text-xs text-muted mb-1">
-                  Tech stack tags (comma-separated)
+                  Project tags (comma-separated)
                 </label>
                 <input
                   type="text"
@@ -649,7 +837,7 @@ export default function AdminPage() {
               {/* Image Upload + URL */}
               <div className="space-y-2">
                 <label className="block font-mono text-xs text-muted">
-                  Thumbnail / Screenshot (upload file or paste path/URL)
+                  Thumbnail / Screenshot (uploads to public/images/uploads/)
                 </label>
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-sm bg-elevated border border-hairline font-mono text-xs text-ink hover:border-code/50 cursor-pointer">
@@ -706,7 +894,7 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* Optional Key Insights Builder (ideal for Data Analytics) */}
+              {/* Optional Key Insights Builder */}
               <div className="pt-2 border-t border-hairline space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-xs text-data font-medium">
@@ -801,23 +989,28 @@ export default function AdminPage() {
                 type="submit"
                 className="w-full py-2.5 rounded-sm font-mono text-xs sm:text-sm font-semibold bg-code text-[#071214] hover:opacity-90 transition-opacity"
               >
-                {editingProjectId ? "Update project" : "Add project"}
+                {editingProjectId ? "Save changes" : "Add project"}
               </button>
             </form>
 
             {/* Existing Projects List */}
             <div className="lg:col-span-6 space-y-3">
               <h2 className="font-mono text-base font-semibold text-ink">
-                Existing Projects ({projects.length})
+                Posted Projects ({projects.length}) — Click Edit to modify
               </h2>
 
               {projects.map((proj) => {
                 const isData = proj.category === "Data Analytics";
                 const confirming = confirmDeleteProjId === proj.id;
+                const isEditing = editingProjectId === proj.id;
                 return (
                   <div
                     key={proj.id}
-                    className="p-4 rounded-md bg-panel border border-hairline flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                    className={`p-4 rounded-md bg-panel border flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                      isEditing
+                        ? "border-code shadow-[0_0_0_1px_rgb(var(--color-code)/0.3)]"
+                        : "border-hairline"
+                    }`}
                   >
                     <div className="flex items-start gap-3.5 min-w-0">
                       <img
@@ -858,7 +1051,7 @@ export default function AdminPage() {
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xs bg-elevated border border-hairline font-mono text-xs text-ink hover:border-code/50"
                       >
                         <Edit3 className="w-3.5 h-3.5 text-code" />
-                        <span>Edit</span>
+                        <span>{isEditing ? "Editing" : "Edit"}</span>
                       </button>
 
                       {confirming ? (
@@ -896,12 +1089,105 @@ export default function AdminPage() {
         {/* ==================== TAB 2: BLOG POSTS MANAGER ==================== */}
         {activeTab === "blog" && (
           <div className="space-y-8">
+            {/* Existing Blog Posts List at Top for Quick Edit Selection */}
+            <div className="space-y-3">
+              <h2 className="font-mono text-base font-semibold text-ink">
+                Existing Blog Posts ({posts.length}) — Select any post to edit
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {posts.map((post) => {
+                  const isDraft = post.status === "draft";
+                  const confirming = confirmDeletePostId === post.id;
+                  const isEditing = editingPostId === post.id;
+                  return (
+                    <div
+                      key={post.id}
+                      className={`p-4 rounded-md bg-panel border flex flex-col justify-between gap-4 transition-colors ${
+                        isEditing
+                          ? "border-data shadow-[0_0_0_1px_rgb(var(--color-data)/0.3)]"
+                          : "border-hairline"
+                      }`}
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2 font-mono text-[11px]">
+                          <span
+                            className={`px-2 py-0.5 rounded-xs border ${
+                              isDraft
+                                ? "bg-data/15 text-data border-data/40"
+                                : "bg-code/15 text-code border-code/40"
+                            }`}
+                          >
+                            {isDraft ? "Draft" : "Published"}
+                          </span>
+                          <span className="text-muted tabular-nums">
+                            {post.date} · {post.readingTime} min read
+                          </span>
+                        </div>
+                        <h3 className="font-mono text-sm font-semibold text-ink">
+                          {post.title}
+                        </h3>
+                        <p className="text-xs text-muted line-clamp-2">
+                          {post.excerpt}
+                        </p>
+                      </div>
+
+                      <div className="pt-3 border-t border-hairline flex items-center justify-between gap-2">
+                        <Link
+                          href={`/blog/${post.slug}`}
+                          className="inline-flex items-center gap-1 font-mono text-xs text-muted hover:text-code"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Open page</span>
+                        </Link>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditPost(post)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xs bg-elevated border border-hairline font-mono text-xs text-ink hover:border-code/50"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-code" />
+                            <span>{isEditing ? "Editing" : "Edit"}</span>
+                          </button>
+
+                          {confirming ? (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await deletePost(post.id);
+                                setConfirmDeletePostId(null);
+                                if (editingPostId === post.id) resetPostForm();
+                                showToast("Post deleted");
+                              }}
+                              className="px-2.5 py-1 rounded-xs bg-red-500/20 border border-red-500/50 font-mono text-xs text-red-300"
+                            >
+                              Confirm
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeletePostId(post.id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xs bg-panel border border-hairline font-mono text-xs text-muted hover:text-red-400"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Write / Edit Blog Post Editor */}
             <div className="bg-panel border border-hairline rounded-md p-6 space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-hairline">
                 <div>
                   <h2 className="font-mono text-base font-semibold text-ink">
-                    {editingPostId ? "Edit Blog Post" : "Write Blog Post"}
+                    {editingPostId ? "Edit Blog Post" : "Write New Blog Post"}
                   </h2>
                   <p className="text-xs text-muted">
                     Supports headings, syntax-highlighted code blocks, lists,
@@ -913,12 +1199,21 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={resetPostForm}
-                    className="font-mono text-xs text-muted hover:text-ink"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xs bg-elevated border border-hairline font-mono text-xs text-muted hover:text-ink"
                   >
-                    Cancel edit
+                    <X className="w-3 h-3" />
+                    <span>Cancel edit / Start new post</span>
                   </button>
                 )}
               </div>
+
+              {editingPostId && (
+                <div className="p-3 rounded-sm bg-data/10 border border-data/40 font-mono text-xs text-data">
+                  Editing existing post — click &ldquo;Publish&rdquo; to update
+                  the live post or &ldquo;Save Draft&rdquo; to unpublish into
+                  drafts.
+                </div>
+              )}
 
               {postFormError && (
                 <div
@@ -929,8 +1224,8 @@ export default function AdminPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                <div className="md:col-span-6">
                   <label className="block font-mono text-xs text-muted mb-1">
                     Post title *
                   </label>
@@ -942,7 +1237,7 @@ export default function AdminPage() {
                     className="w-full px-3 py-2 rounded-sm bg-canvas border border-hairline text-sm text-ink"
                   />
                 </div>
-                <div>
+                <div className="md:col-span-4">
                   <label className="block font-mono text-xs text-muted mb-1">
                     Tags (comma-separated)
                   </label>
@@ -952,6 +1247,17 @@ export default function AdminPage() {
                     onChange={(e) => setPostTags(e.target.value)}
                     placeholder="SQL, Data Analytics, React"
                     className="w-full px-3 py-2 rounded-sm bg-canvas border border-hairline font-mono text-xs text-ink"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block font-mono text-xs text-muted mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={postDate}
+                    onChange={(e) => setPostDate(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-sm bg-canvas border border-hairline font-mono text-xs text-ink"
                   />
                 </div>
               </div>
@@ -972,7 +1278,7 @@ export default function AdminPage() {
 
                 <div>
                   <label className="block font-mono text-xs text-muted mb-1">
-                    Cover image (upload or URL)
+                    Cover image (uploads to public/images/uploads/)
                   </label>
                   <div className="flex items-center gap-2">
                     <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-sm bg-elevated border border-hairline font-mono text-xs text-ink hover:border-code/50 cursor-pointer shrink-0">
@@ -1002,7 +1308,9 @@ export default function AdminPage() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => insertMarkdownSnippet("\n## Section Heading\n")}
+                      onClick={() =>
+                        insertMarkdownSnippet("\n## Section Heading\n")
+                      }
                       className="px-2 py-1 rounded-xs bg-panel border border-hairline text-muted hover:text-ink"
                     >
                       H2
@@ -1039,7 +1347,9 @@ export default function AdminPage() {
                     <button
                       type="button"
                       onClick={() =>
-                        insertMarkdownSnippet("\n- First takeaway\n- Second takeaway\n")
+                        insertMarkdownSnippet(
+                          "\n- First takeaway\n- Second takeaway\n"
+                        )
                       }
                       className="px-2 py-1 rounded-xs bg-panel border border-hairline text-muted hover:text-ink"
                     >
@@ -1048,7 +1358,9 @@ export default function AdminPage() {
                     <button
                       type="button"
                       onClick={() =>
-                        insertMarkdownSnippet("\n> Key insight or takeaway.\n")
+                        insertMarkdownSnippet(
+                          "\n> Key insight or takeaway.\n"
+                        )
                       }
                       className="px-2 py-1 rounded-xs bg-panel border border-hairline text-muted hover:text-ink"
                     >
@@ -1153,114 +1465,356 @@ export default function AdminPage() {
                   onClick={() => handleSavePostWithStatus("published")}
                   className="px-5 py-2.5 rounded-sm font-mono text-xs sm:text-sm font-semibold bg-code text-[#071214] hover:opacity-90 transition-opacity"
                 >
-                  Publish
+                  {editingPostId ? "Save & Publish" : "Publish"}
                 </button>
-              </div>
-            </div>
-
-            {/* Existing Blog Posts List */}
-            <div className="space-y-3">
-              <h2 className="font-mono text-base font-semibold text-ink">
-                All Blog Posts ({posts.length})
-              </h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {posts.map((post) => {
-                  const isDraft = post.status === "draft";
-                  const confirming = confirmDeletePostId === post.id;
-                  return (
-                    <div
-                      key={post.id}
-                      className="p-4 rounded-md bg-panel border border-hairline flex flex-col justify-between gap-4"
-                    >
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2 font-mono text-[11px]">
-                          <span
-                            className={`px-2 py-0.5 rounded-xs border ${
-                              isDraft
-                                ? "bg-data/15 text-data border-data/40"
-                                : "bg-code/15 text-code border-code/40"
-                            }`}
-                          >
-                            {isDraft ? "Draft" : "Published"}
-                          </span>
-                          <span className="text-muted tabular-nums">
-                            {post.date} · {post.readingTime} min read
-                          </span>
-                        </div>
-                        <h3 className="font-mono text-sm font-semibold text-ink">
-                          {post.title}
-                        </h3>
-                        <p className="text-xs text-muted line-clamp-2">
-                          {post.excerpt}
-                        </p>
-                      </div>
-
-                      <div className="pt-3 border-t border-hairline flex items-center justify-between gap-2">
-                        <Link
-                          href={`/blog/${post.slug}`}
-                          className="inline-flex items-center gap-1 font-mono text-xs text-muted hover:text-code"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Preview page</span>
-                        </Link>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditPost(post)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xs bg-elevated border border-hairline font-mono text-xs text-ink hover:border-code/50"
-                          >
-                            <Edit3 className="w-3.5 h-3.5 text-code" />
-                            <span>Edit</span>
-                          </button>
-
-                          {confirming ? (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await deletePost(post.id);
-                                setConfirmDeletePostId(null);
-                                if (editingPostId === post.id) resetPostForm();
-                                showToast("Post deleted");
-                              }}
-                              className="px-2.5 py-1 rounded-xs bg-red-500/20 border border-red-500/50 font-mono text-xs text-red-300"
-                            >
-                              Confirm
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeletePostId(post.id)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xs bg-panel border border-hairline font-mono text-xs text-muted hover:text-red-400"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             </div>
           </div>
         )}
 
-        {/* ==================== TAB 3: INBOX & SETTINGS ==================== */}
+        {/* ==================== TAB 3: TECH STACK MANAGER ==================== */}
+        {activeTab === "stack" && (
+          <div className="space-y-8">
+            {/* Live Counter + Quick-Add Tool Bar */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+              <div className="lg:col-span-4 bg-panel border border-hairline rounded-md p-6 flex flex-col justify-between">
+                <div>
+                  <span className="font-mono text-xs text-muted">
+                    Overall Tech Stacks Known
+                  </span>
+                  <div className="mt-2 font-mono text-4xl font-bold text-code tabular-nums">
+                    {stats.technologiesUsed}
+                  </div>
+                </div>
+                <p className="text-xs text-muted mt-3 leading-relaxed">
+                  Automatically counts every distinct language, framework, and
+                  tool across your {skills.length} categories and updates both
+                  the Hero and Profile KPI cards immediately.
+                </p>
+              </div>
+
+              <form
+                onSubmit={handleQuickAddTech}
+                className="lg:col-span-8 bg-panel border border-hairline rounded-md p-6 space-y-4"
+              >
+                <div>
+                  <h2 className="font-mono text-base font-semibold text-ink">
+                    Add Tech Stack
+                  </h2>
+                  <p className="text-xs text-muted mt-0.5">
+                    Select a category and enter one or multiple comma-separated
+                    tools (e.g., <code className="font-mono">Docker, Prisma</code>
+                    ).
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                  <div className="sm:col-span-5">
+                    <label className="block font-mono text-[11px] text-muted mb-1">
+                      Category of use
+                    </label>
+                    <select
+                      value={quickCategoryId}
+                      onChange={(e) => setQuickCategoryId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-sm bg-canvas border border-hairline font-mono text-xs text-ink"
+                    >
+                      {skills.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.category}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-5">
+                    <label className="block font-mono text-[11px] text-muted mb-1">
+                      Tech stack name(s)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={quickToolsInput}
+                      onChange={(e) => setQuickToolsInput(e.target.value)}
+                      placeholder="e.g., Docker, GraphQL"
+                      className="w-full px-3 py-2 rounded-sm bg-canvas border border-hairline font-mono text-xs text-ink"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2 flex items-end">
+                    <button
+                      type="submit"
+                      className="w-full py-2 px-3 rounded-sm bg-code text-[#071214] font-mono text-xs font-semibold hover:opacity-90 transition-opacity"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            {/* Existing Categories & Tools */}
+            <div className="space-y-4">
+              <h2 className="font-mono text-base font-semibold text-ink">
+                Manage Stack Categories ({skills.length})
+              </h2>
+
+              {skills.map((group) => {
+                const isEditingGroup = editingGroupId === group.id;
+                const confirmingDelete = confirmDeleteGroupId === group.id;
+                const isCode = group.accent === "code";
+
+                return (
+                  <div
+                    key={group.id}
+                    className="bg-panel border border-hairline rounded-md p-5 space-y-4"
+                  >
+                    {isEditingGroup ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                          <div className="md:col-span-5">
+                            <label className="block font-mono text-[11px] text-muted mb-1">
+                              Category name
+                            </label>
+                            <input
+                              type="text"
+                              value={groupTitleDraft}
+                              onChange={(e) =>
+                                setGroupTitleDraft(e.target.value)
+                              }
+                              className="w-full px-3 py-1.5 rounded-sm bg-canvas border border-hairline font-mono text-xs text-ink"
+                            />
+                          </div>
+                          <div className="md:col-span-5">
+                            <label className="block font-mono text-[11px] text-muted mb-1">
+                              Purpose / description
+                            </label>
+                            <input
+                              type="text"
+                              value={groupDescDraft}
+                              onChange={(e) =>
+                                setGroupDescDraft(e.target.value)
+                              }
+                              className="w-full px-3 py-1.5 rounded-sm bg-canvas border border-hairline text-xs text-ink"
+                            />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="block font-mono text-[11px] text-muted mb-1">
+                              Accent dot
+                            </label>
+                            <select
+                              value={groupAccentDraft}
+                              onChange={(e) =>
+                                setGroupAccentDraft(
+                                  e.target.value as "code" | "data"
+                                )
+                              }
+                              className="w-full px-2.5 py-1.5 rounded-sm bg-canvas border border-hairline font-mono text-xs text-ink"
+                            >
+                              <option value="code">Code (Cyan)</option>
+                              <option value="data">Data (Amber)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block font-mono text-[11px] text-muted mb-1">
+                            Tools in this category (comma-separated)
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={groupItemsDraft}
+                            onChange={(e) => setGroupItemsDraft(e.target.value)}
+                            className="w-full px-3 py-2 rounded-sm bg-canvas border border-hairline font-mono text-xs text-ink"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveSkillGroup(group.id)}
+                            className="px-3.5 py-1.5 rounded-xs bg-code text-[#071214] font-mono text-xs font-semibold"
+                          >
+                            Save category
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingGroupId(null)}
+                            className="px-3 py-1.5 rounded-xs bg-elevated border border-hairline font-mono text-xs text-muted hover:text-ink"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`w-2 h-2 rounded-xs ${
+                                  isCode ? "bg-code" : "bg-data"
+                                }`}
+                              />
+                              <h3 className="font-mono text-sm font-semibold text-ink">
+                                {group.category}
+                              </h3>
+                              <span className="font-mono text-[11px] text-muted tabular-nums">
+                                ({group.items.length})
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted mt-0.5 pl-4">
+                              {group.description}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startEditSkillGroup(group)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xs bg-elevated border border-hairline font-mono text-xs text-ink hover:border-code/50"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-code" />
+                              <span>Edit category / items</span>
+                            </button>
+
+                            {confirmingDelete ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const next = skills.filter(
+                                    (g) => g.id !== group.id
+                                  );
+                                  await saveSkills(next);
+                                  setConfirmDeleteGroupId(null);
+                                  showToast("Category removed");
+                                }}
+                                className="px-2.5 py-1 rounded-xs bg-red-500/20 border border-red-500/50 font-mono text-xs text-red-300"
+                              >
+                                Confirm
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setConfirmDeleteGroupId(group.id)
+                                }
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xs bg-panel border border-hairline font-mono text-xs text-muted hover:text-red-400"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Individual Tool Chips with 1-Click Remove */}
+                        <div className="flex flex-wrap gap-2 pl-4">
+                          {group.items.length === 0 ? (
+                            <span className="font-mono text-xs text-faint italic">
+                              No tools listed in this category yet.
+                            </span>
+                          ) : (
+                            group.items.map((item) => (
+                              <span
+                                key={item}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xs bg-elevated border border-hairline font-mono text-xs text-ink"
+                              >
+                                <span>{item}</span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleRemoveSingleTech(group.id, item)
+                                  }
+                                  aria-label={`Remove ${item}`}
+                                  className="text-muted hover:text-red-400 transition-colors"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Create a Brand-New Category */}
+            <form
+              onSubmit={handleCreateCategory}
+              className="bg-panel border border-hairline rounded-md p-6 space-y-4"
+            >
+              <h3 className="font-mono text-sm font-semibold text-ink">
+                Create New Stack Category
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                <div className="md:col-span-4">
+                  <input
+                    type="text"
+                    required
+                    value={newCategoryTitle}
+                    onChange={(e) => setNewCategoryTitle(e.target.value)}
+                    placeholder="Category (e.g., Cloud & DevOps)"
+                    className="w-full px-3 py-2 rounded-sm bg-canvas border border-hairline font-mono text-xs text-ink"
+                  />
+                </div>
+                <div className="md:col-span-5">
+                  <input
+                    type="text"
+                    value={newCategoryDesc}
+                    onChange={(e) => setNewCategoryDesc(e.target.value)}
+                    placeholder="Short description of how you use these..."
+                    className="w-full px-3 py-2 rounded-sm bg-canvas border border-hairline text-xs text-ink"
+                  />
+                </div>
+                <div className="md:col-span-3">
+                  <select
+                    value={newCategoryAccent}
+                    onChange={(e) =>
+                      setNewCategoryAccent(e.target.value as "code" | "data")
+                    }
+                    className="w-full px-3 py-2 rounded-sm bg-canvas border border-hairline font-mono text-xs text-ink"
+                  >
+                    <option value="code">Code Accent (Cyan)</option>
+                    <option value="data">Data Accent (Amber)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  type="text"
+                  value={newCategoryItems}
+                  onChange={(e) => setNewCategoryItems(e.target.value)}
+                  placeholder="Initial tools, comma-separated (e.g., Vercel, Docker, GitHub Actions)"
+                  className="flex-1 px-3 py-2 rounded-sm bg-canvas border border-hairline font-mono text-xs text-ink"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-sm bg-elevated border border-hairline font-mono text-xs font-semibold text-ink hover:border-code/50 shrink-0"
+                >
+                  + Create category
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* ==================== TAB 4: INBOX & JSON DB ==================== */}
         {activeTab === "inbox" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             {/* Contact Messages */}
             <div className="lg:col-span-7 space-y-4">
               <h2 className="font-mono text-base font-semibold text-ink">
-                Contact Form Submissions ({messages.length})
+                Local Contact Form Submissions ({messages.length})
               </h2>
 
               {messages.length === 0 ? (
                 <div className="p-8 rounded-md bg-panel border border-hairline text-sm text-muted">
-                  No messages received yet. Submissions from the public contact
-                  form appear here automatically.
+                  No messages in this browser yet. Direct recruiter outreach
+                  links to your email (<code className="font-mono">comiamarkjoel@gmail.com</code>)
+                  and LinkedIn in the Contact section.
                 </div>
               ) : (
                 messages.map((msg) => (
@@ -1285,89 +1839,51 @@ export default function AdminPage() {
               )}
             </div>
 
-            {/* Storage & Security Settings */}
+            {/* JSON Database Workflow & Password Settings */}
             <div className="lg:col-span-5 space-y-6">
               <div className="p-6 rounded-md bg-panel border border-hairline space-y-4">
                 <h2 className="font-mono text-base font-semibold text-ink">
-                  Database &amp; Persistence
+                  JSON Database Workflow
                 </h2>
-                <p className="text-xs text-muted leading-relaxed">
-                  Active storage engine:{" "}
-                  <strong className="font-mono text-code">
-                    {storageBackend}
-                  </strong>
-                  . Content persists immediately in browser{" "}
-                  <code className="font-mono">localStorage</code> out of the
-                  box, and automatically syncs with Supabase Postgres whenever{" "}
-                  <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code>{" "}
-                  and{" "}
-                  <code className="font-mono">
-                    NEXT_PUBLIC_SUPABASE_ANON_KEY
-                  </code>{" "}
-                  are set in <code className="font-mono">.env.local</code>.
-                </p>
+                <ol className="text-xs text-muted space-y-2 list-decimal pl-4 leading-relaxed">
+                  <li>
+                    Run <code className="font-mono text-ink">npm run dev</code>{" "}
+                    on your computer and open{" "}
+                    <code className="font-mono text-code">
+                      localhost:3000/admin
+                    </code>
+                    .
+                  </li>
+                  <li>
+                    Any project, blog post, or tech stack you add or edit writes
+                    directly into{" "}
+                    <code className="font-mono text-ink">
+                      src/data/portfolio-db.json
+                    </code>{" "}
+                    (and saves uploaded images into{" "}
+                    <code className="font-mono text-ink">
+                      public/images/uploads/
+                    </code>
+                    ).
+                  </li>
+                  <li>
+                    Run{" "}
+                    <code className="font-mono text-ink">
+                      git add . &amp;&amp; git commit -m &quot;Update portfolio&quot; &amp;&amp; git push
+                    </code>{" "}
+                    — Vercel automatically deploys your changes for all
+                    visitors!
+                  </li>
+                </ol>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowSqlModal((prev) => !prev)}
-                    className="px-3 py-1.5 rounded-xs bg-elevated border border-hairline font-mono text-xs text-ink hover:border-code/50"
-                  >
-                    {showSqlModal
-                      ? "Hide Supabase SQL schema"
-                      : "View Supabase SQL schema"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const snapshot = {
-                        exportedAt: new Date().toISOString(),
-                        storageBackend,
-                        projects,
-                        posts,
-                        messages,
-                      };
-                      const blob = new Blob(
-                        [JSON.stringify(snapshot, null, 2)],
-                        { type: "application/json" }
-                      );
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `mj-portfolio-db-${new Date()
-                        .toISOString()
-                        .slice(0, 10)}.json`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                      showToast("Exported JSON database snapshot");
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-elevated border border-hairline font-mono text-xs text-code hover:border-code/50"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Export JSON snapshot</span>
-                  </button>
-                </div>
-
-                {showSqlModal && (
-                  <pre className="p-3 rounded-sm bg-[#080d18] border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto">
-                    {SUPABASE_SETUP_SQL}
-                  </pre>
-                )}
-
-                <div className="pt-4 border-t border-hairline">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await resetData();
-                      showToast("Restored default sample projects and posts");
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xs bg-panel border border-hairline font-mono text-xs text-muted hover:text-data"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Reset to initial projects &amp; posts</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadDbJson}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xs bg-elevated border border-hairline font-mono text-xs text-code hover:border-code/50"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download portfolio-db.json</span>
+                </button>
               </div>
 
               <div className="p-6 rounded-md bg-panel border border-hairline space-y-3">
@@ -1406,4 +1922,3 @@ export default function AdminPage() {
     </div>
   );
 }
-

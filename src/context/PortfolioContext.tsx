@@ -12,19 +12,22 @@ import { INITIAL_POSTS, INITIAL_PROJECTS, SKILLS_DATA } from "@/data/seed";
 import {
   addContactMessage,
   fetchMessages,
-  fetchPosts,
-  fetchProjects,
+  fetchPortfolioSnapshot,
   getStoredTheme,
   PORTFOLIO_SYNC_EVENT,
   removePost,
   removeProject,
-  resetAllPortfolioData,
+  saveAllSkills,
   saveStoredTheme,
   upsertPost,
   upsertProject,
 } from "@/lib/storage";
-import { isSupabaseConfigured } from "@/lib/supabase";
-import { BlogPost, ContactMessage, Project } from "@/types/portfolio";
+import {
+  BlogPost,
+  ContactMessage,
+  Project,
+  SkillCategoryGroup,
+} from "@/types/portfolio";
 
 interface PortfolioStats {
   projectsBuilt: number;
@@ -37,23 +40,25 @@ interface PortfolioStats {
 }
 
 interface PortfolioContextValue {
+  skills: SkillCategoryGroup[];
   projects: Project[];
   posts: BlogPost[];
   publishedPosts: BlogPost[];
   messages: ContactMessage[];
   stats: PortfolioStats;
   isHydrated: boolean;
-  storageBackend: "Supabase" | "localStorage";
+  isReadOnlyHost: boolean;
+  storageBackend: string;
   theme: "dark" | "light";
   toggleTheme: () => void;
-  saveProject: (project: Project) => Promise<void>;
-  deleteProject: (id: string) => Promise<void>;
-  savePost: (post: BlogPost) => Promise<void>;
-  deletePost: (id: string) => Promise<void>;
+  saveSkills: (nextSkills: SkillCategoryGroup[]) => Promise<boolean>;
+  saveProject: (project: Project) => Promise<boolean>;
+  deleteProject: (id: string) => Promise<boolean>;
+  savePost: (post: BlogPost) => Promise<boolean>;
+  deletePost: (id: string) => Promise<boolean>;
   sendContactMessage: (
     data: Omit<ContactMessage, "id" | "createdAt">
   ) => Promise<void>;
-  resetData: () => Promise<void>;
 }
 
 const PortfolioContext = createContext<PortfolioContextValue | undefined>(
@@ -61,20 +66,23 @@ const PortfolioContext = createContext<PortfolioContextValue | undefined>(
 );
 
 export function PortfolioProvider({ children }: { children: React.ReactNode }) {
+  const [skills, setSkills] = useState<SkillCategoryGroup[]>(SKILLS_DATA);
   const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
   const [posts, setPosts] = useState<BlogPost[]>(INITIAL_POSTS);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
+  const [isReadOnlyHost, setIsReadOnlyHost] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [isHydrated, setIsHydrated] = useState(false);
 
   const loadAll = useCallback(async () => {
-    const [loadedProjects, loadedPosts, loadedMessages] = await Promise.all([
-      fetchProjects(),
-      fetchPosts(),
+    const [snapshot, loadedMessages] = await Promise.all([
+      fetchPortfolioSnapshot(),
       fetchMessages(),
     ]);
-    setProjects(loadedProjects);
-    setPosts(loadedPosts);
+    setSkills(snapshot.skills);
+    setProjects(snapshot.projects);
+    setPosts(snapshot.posts);
+    setIsReadOnlyHost(snapshot.isReadOnlyHost);
     setMessages(loadedMessages);
   }, []);
 
@@ -105,25 +113,58 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const saveProject = useCallback(async (project: Project) => {
-    const next = await upsertProject(project);
-    setProjects(next);
+  const saveSkills = useCallback(async (nextSkills: SkillCategoryGroup[]) => {
+    const { skills: updated, savedToDisk } = await saveAllSkills(nextSkills);
+    setSkills(updated);
+    setIsReadOnlyHost(!savedToDisk);
+    return savedToDisk;
   }, []);
 
-  const deleteProject = useCallback(async (id: string) => {
-    const next = await removeProject(id);
-    setProjects(next);
-  }, []);
+  const saveProject = useCallback(
+    async (project: Project) => {
+      const { projects: updated, savedToDisk } = await upsertProject(
+        project,
+        projects
+      );
+      setProjects(updated);
+      setIsReadOnlyHost(!savedToDisk);
+      return savedToDisk;
+    },
+    [projects]
+  );
 
-  const savePost = useCallback(async (post: BlogPost) => {
-    const next = await upsertPost(post);
-    setPosts(next);
-  }, []);
+  const deleteProject = useCallback(
+    async (id: string) => {
+      const { projects: updated, savedToDisk } = await removeProject(
+        id,
+        projects
+      );
+      setProjects(updated);
+      setIsReadOnlyHost(!savedToDisk);
+      return savedToDisk;
+    },
+    [projects]
+  );
 
-  const deletePost = useCallback(async (id: string) => {
-    const next = await removePost(id);
-    setPosts(next);
-  }, []);
+  const savePost = useCallback(
+    async (post: BlogPost) => {
+      const { posts: updated, savedToDisk } = await upsertPost(post, posts);
+      setPosts(updated);
+      setIsReadOnlyHost(!savedToDisk);
+      return savedToDisk;
+    },
+    [posts]
+  );
+
+  const deletePost = useCallback(
+    async (id: string) => {
+      const { posts: updated, savedToDisk } = await removePost(id, posts);
+      setPosts(updated);
+      setIsReadOnlyHost(!savedToDisk);
+      return savedToDisk;
+    },
+    [posts]
+  );
 
   const sendContactMessage = useCallback(
     async (data: Omit<ContactMessage, "id" | "createdAt">) => {
@@ -138,12 +179,6 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const resetData = useCallback(async () => {
-    const { projects: p, posts: b } = await resetAllPortfolioData();
-    setProjects(p);
-    setPosts(b);
-  }, []);
-
   const publishedPosts = useMemo(
     () =>
       posts
@@ -153,13 +188,15 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
   );
 
   const stats = useMemo<PortfolioStats>(() => {
+    // Automatically count all distinct tech stack items managed in skills
     const techSet = new Set<string>();
-    SKILLS_DATA.forEach((group) =>
-      group.items.forEach((item) => techSet.add(item.trim().toLowerCase()))
+    skills.forEach((group) =>
+      group.items.forEach((item) => {
+        const cleaned = item.trim().toLowerCase();
+        if (cleaned) techSet.add(cleaned);
+      })
     );
-    projects.forEach((proj) =>
-      proj.tags.forEach((tag) => techSet.add(tag.trim().toLowerCase()))
-    );
+
     const webProjects = projects.filter((p) => p.category === "Web Dev").length;
     const dataProjects = projects.filter(
       (p) => p.category === "Data Analytics"
@@ -178,41 +215,50 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
       draftPosts: posts.filter((p) => p.status === "draft").length,
       insightsDocumented,
     };
-  }, [projects, posts, publishedPosts]);
+  }, [skills, projects, posts, publishedPosts]);
+
+  const storageBackend = isReadOnlyHost
+    ? "localStorage (read-only host)"
+    : "portfolio-db.json";
 
   const value = useMemo<PortfolioContextValue>(
     () => ({
+      skills,
       projects,
       posts,
       publishedPosts,
       messages,
       stats,
       isHydrated,
-      storageBackend: isSupabaseConfigured ? "Supabase" : "localStorage",
+      isReadOnlyHost,
+      storageBackend,
       theme,
       toggleTheme,
+      saveSkills,
       saveProject,
       deleteProject,
       savePost,
       deletePost,
       sendContactMessage,
-      resetData,
     }),
     [
+      skills,
       projects,
       posts,
       publishedPosts,
       messages,
       stats,
       isHydrated,
+      isReadOnlyHost,
+      storageBackend,
       theme,
       toggleTheme,
+      saveSkills,
       saveProject,
       deleteProject,
       savePost,
       deletePost,
       sendContactMessage,
-      resetData,
     ]
   );
 
@@ -230,4 +276,3 @@ export function usePortfolio() {
   }
   return ctx;
 }
-

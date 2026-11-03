@@ -1,17 +1,31 @@
-import { INITIAL_POSTS, INITIAL_PROJECTS } from "@/data/seed";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase";
-import { BlogPost, ContactMessage, Project } from "@/types/portfolio";
+import { INITIAL_POSTS, INITIAL_PROJECTS, SKILLS_DATA } from "@/data/seed";
+import { compressImageFile } from "@/lib/image";
+import {
+  BlogPost,
+  ContactMessage,
+  Project,
+  SkillCategoryGroup,
+} from "@/types/portfolio";
 
 const KEYS = {
+  SKILLS: "mj_portfolio_skills_v1",
   PROJECTS: "mj_portfolio_projects_v1",
   POSTS: "mj_portfolio_posts_v1",
   MESSAGES: "mj_portfolio_messages_v1",
+  LOCAL_OVERRIDE: "mj_portfolio_local_override_v1",
   ADMIN_SESSION: "mj_portfolio_admin_session_v1",
   ADMIN_PASS: "mj_portfolio_admin_custom_pass_v1",
   THEME: "mj_portfolio_theme_v1",
 } as const;
 
 export const PORTFOLIO_SYNC_EVENT = "mj-portfolio-updated";
+
+export interface PortfolioSnapshot {
+  skills: SkillCategoryGroup[];
+  projects: Project[];
+  posts: BlogPost[];
+  isReadOnlyHost: boolean;
+}
 
 function notifySync() {
   if (typeof window !== "undefined") {
@@ -23,188 +37,207 @@ function readLocal<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
     const raw = window.localStorage.getItem(key);
-    if (!raw) {
-      window.localStorage.setItem(key, JSON.stringify(fallback));
-      return fallback;
-    }
+    if (!raw) return fallback;
     return JSON.parse(raw) as T;
   } catch {
     return fallback;
   }
 }
 
-function writeLocal<T>(key: string, value: T) {
+function cacheLocalSnapshot(data: {
+  skills: SkillCategoryGroup[];
+  projects: Project[];
+  posts: BlogPost[];
+}) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(value));
+  try {
+    window.localStorage.setItem(KEYS.SKILLS, JSON.stringify(data.skills));
+    window.localStorage.setItem(KEYS.PROJECTS, JSON.stringify(data.projects));
+    window.localStorage.setItem(KEYS.POSTS, JSON.stringify(data.posts));
+  } catch {
+    // Ignore storage quota issues when disk JSON is active
+  }
+}
+
+export async function fetchPortfolioSnapshot(): Promise<PortfolioSnapshot> {
+  try {
+    const res = await fetch("/api/portfolio", { cache: "no-store" });
+    if (res.ok) {
+      const json = (await res.json()) as PortfolioSnapshot;
+      const hasLocalOverride =
+        typeof window !== "undefined" &&
+        window.localStorage.getItem(KEYS.LOCAL_OVERRIDE) === "1";
+
+      // On read-only hosts (e.g. Vercel), only use localStorage if user explicitly edited via /admin on that browser
+      if (json.isReadOnlyHost && hasLocalOverride) {
+        return {
+          skills: readLocal(KEYS.SKILLS, json.skills),
+          projects: readLocal(KEYS.PROJECTS, json.projects),
+          posts: readLocal(KEYS.POSTS, json.posts),
+          isReadOnlyHost: true,
+        };
+      }
+
+      // Otherwise portfolio-db.json is the authoritative source of truth
+      cacheLocalSnapshot(json);
+      return json;
+    }
+  } catch {
+    // Fallback to localStorage / bundled seed
+  }
+
+  return {
+    skills: readLocal(KEYS.SKILLS, SKILLS_DATA),
+    projects: readLocal(KEYS.PROJECTS, INITIAL_PROJECTS),
+    posts: readLocal(KEYS.POSTS, INITIAL_POSTS),
+    isReadOnlyHost: false,
+  };
+}
+
+async function persistDbUpdate(partial: {
+  skills?: SkillCategoryGroup[];
+  projects?: Project[];
+  posts?: BlogPost[];
+}): Promise<{
+  skills: SkillCategoryGroup[];
+  projects: Project[];
+  posts: BlogPost[];
+  savedToDisk: boolean;
+}> {
+  const fallbackSkills =
+    partial.skills ?? readLocal(KEYS.SKILLS, SKILLS_DATA);
+  const fallbackProjects =
+    partial.projects ?? readLocal(KEYS.PROJECTS, INITIAL_PROJECTS);
+  const fallbackPosts =
+    partial.posts ?? readLocal(KEYS.POSTS, INITIAL_POSTS);
+
+  try {
+    const res = await fetch("/api/portfolio", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(partial),
+    });
+
+    if (res.ok) {
+      const json = (await res.json()) as {
+        skills: SkillCategoryGroup[];
+        projects: Project[];
+        posts: BlogPost[];
+        savedToDisk: boolean;
+      };
+      cacheLocalSnapshot(json);
+      if (typeof window !== "undefined") {
+        if (json.savedToDisk) {
+          window.localStorage.removeItem(KEYS.LOCAL_OVERRIDE);
+        } else {
+          window.localStorage.setItem(KEYS.LOCAL_OVERRIDE, "1");
+        }
+      }
+      notifySync();
+      return json;
+    }
+  } catch {
+    // Fallback to localStorage below
+  }
+
+  const fallback = {
+    skills: fallbackSkills,
+    projects: fallbackProjects,
+    posts: fallbackPosts,
+    savedToDisk: false,
+  };
+  cacheLocalSnapshot(fallback);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(KEYS.LOCAL_OVERRIDE, "1");
+  }
   notifySync();
+  return fallback;
 }
 
-export async function fetchProjects(): Promise<Project[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("portfolio_projects")
-        .select("payload")
-        .order("created_at", { ascending: false });
-      if (!error && data && data.length > 0) {
-        const mapped = data.map((row) => row.payload as Project);
-        writeLocal(KEYS.PROJECTS, mapped);
-        return mapped;
-      }
-      if (!error && data && data.length === 0) {
-        // Seed initial projects into Supabase on first empty run
-        await Promise.all(
-          INITIAL_PROJECTS.map((proj) =>
-            supabase!.from("portfolio_projects").upsert({ id: proj.id, payload: proj })
-          )
-        );
-        return INITIAL_PROJECTS;
-      }
-    } catch {
-      // Fallback cleanly to localStorage
-    }
-  }
-  return readLocal<Project[]>(KEYS.PROJECTS, INITIAL_PROJECTS);
+export async function saveAllSkills(
+  skills: SkillCategoryGroup[]
+): Promise<{ skills: SkillCategoryGroup[]; savedToDisk: boolean }> {
+  const res = await persistDbUpdate({ skills });
+  return { skills: res.skills, savedToDisk: res.savedToDisk };
 }
 
-export async function upsertProject(project: Project): Promise<Project[]> {
-  const current = readLocal<Project[]>(KEYS.PROJECTS, INITIAL_PROJECTS);
-  const exists = current.some((p) => p.id === project.id);
+export async function upsertProject(
+  project: Project,
+  currentProjects: Project[]
+): Promise<{ projects: Project[]; savedToDisk: boolean }> {
+  const exists = currentProjects.some((p) => p.id === project.id);
   const next = exists
-    ? current.map((p) => (p.id === project.id ? project : p))
-    : [project, ...current];
-  writeLocal(KEYS.PROJECTS, next);
-
-  if (isSupabaseConfigured && supabase) {
-    try {
-      await supabase
-        .from("portfolio_projects")
-        .upsert({ id: project.id, payload: project });
-    } catch {
-      // Local copy already persisted
-    }
-  }
-  return next;
+    ? currentProjects.map((p) => (p.id === project.id ? project : p))
+    : [project, ...currentProjects];
+  const res = await persistDbUpdate({ projects: next });
+  return { projects: res.projects, savedToDisk: res.savedToDisk };
 }
 
-export async function removeProject(id: string): Promise<Project[]> {
-  const current = readLocal<Project[]>(KEYS.PROJECTS, INITIAL_PROJECTS);
-  const next = current.filter((p) => p.id !== id);
-  writeLocal(KEYS.PROJECTS, next);
-
-  if (isSupabaseConfigured && supabase) {
-    try {
-      await supabase.from("portfolio_projects").delete().eq("id", id);
-    } catch {
-      // Local deletion already persisted
-    }
-  }
-  return next;
+export async function removeProject(
+  id: string,
+  currentProjects: Project[]
+): Promise<{ projects: Project[]; savedToDisk: boolean }> {
+  const next = currentProjects.filter((p) => p.id !== id);
+  const res = await persistDbUpdate({ projects: next });
+  return { projects: res.projects, savedToDisk: res.savedToDisk };
 }
 
-export async function fetchPosts(): Promise<BlogPost[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("portfolio_posts")
-        .select("payload")
-        .order("updated_at", { ascending: false });
-      if (!error && data && data.length > 0) {
-        const mapped = data.map((row) => row.payload as BlogPost);
-        writeLocal(KEYS.POSTS, mapped);
-        return mapped;
-      }
-      if (!error && data && data.length === 0) {
-        await Promise.all(
-          INITIAL_POSTS.map((post) =>
-            supabase!.from("portfolio_posts").upsert({ id: post.id, payload: post })
-          )
-        );
-        return INITIAL_POSTS;
-      }
-    } catch {
-      // Fallback cleanly to localStorage
-    }
-  }
-  return readLocal<BlogPost[]>(KEYS.POSTS, INITIAL_POSTS);
-}
-
-export async function upsertPost(post: BlogPost): Promise<BlogPost[]> {
-  const current = readLocal<BlogPost[]>(KEYS.POSTS, INITIAL_POSTS);
-  const exists = current.some((p) => p.id === post.id);
+export async function upsertPost(
+  post: BlogPost,
+  currentPosts: BlogPost[]
+): Promise<{ posts: BlogPost[]; savedToDisk: boolean }> {
+  const exists = currentPosts.some((p) => p.id === post.id);
   const next = exists
-    ? current.map((p) => (p.id === post.id ? post : p))
-    : [post, ...current];
-  writeLocal(KEYS.POSTS, next);
-
-  if (isSupabaseConfigured && supabase) {
-    try {
-      await supabase
-        .from("portfolio_posts")
-        .upsert({ id: post.id, payload: post, updated_at: new Date().toISOString() });
-    } catch {
-      // Local copy already persisted
-    }
-  }
-  return next;
+    ? currentPosts.map((p) => (p.id === post.id ? post : p))
+    : [post, ...currentPosts];
+  const res = await persistDbUpdate({ posts: next });
+  return { posts: res.posts, savedToDisk: res.savedToDisk };
 }
 
-export async function removePost(id: string): Promise<BlogPost[]> {
-  const current = readLocal<BlogPost[]>(KEYS.POSTS, INITIAL_POSTS);
-  const next = current.filter((p) => p.id !== id);
-  writeLocal(KEYS.POSTS, next);
+export async function removePost(
+  id: string,
+  currentPosts: BlogPost[]
+): Promise<{ posts: BlogPost[]; savedToDisk: boolean }> {
+  const next = currentPosts.filter((p) => p.id !== id);
+  const res = await persistDbUpdate({ posts: next });
+  return { posts: res.posts, savedToDisk: res.savedToDisk };
+}
 
-  if (isSupabaseConfigured && supabase) {
-    try {
-      await supabase.from("portfolio_posts").delete().eq("id", id);
-    } catch {
-      // Local deletion already persisted
+export async function uploadAssetFile(file: File): Promise<string> {
+  const compressedDataUrl = await compressImageFile(file);
+  try {
+    const res = await fetch("/api/portfolio/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: file.name,
+        dataUrl: compressedDataUrl,
+      }),
+    });
+    if (res.ok) {
+      const json = (await res.json()) as { url?: string };
+      if (json.url) return json.url;
     }
+  } catch {
+    // Fallback to compressed data URL
   }
-  return next;
+  return compressedDataUrl;
 }
 
 export async function fetchMessages(): Promise<ContactMessage[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("portfolio_messages")
-        .select("payload")
-        .order("created_at", { ascending: false });
-      if (!error && data) {
-        const mapped = data.map((row) => row.payload as ContactMessage);
-        writeLocal(KEYS.MESSAGES, mapped);
-        return mapped;
-      }
-    } catch {
-      // Fallback cleanly to localStorage
-    }
-  }
   return readLocal<ContactMessage[]>(KEYS.MESSAGES, []);
 }
 
-export async function addContactMessage(msg: ContactMessage): Promise<ContactMessage[]> {
+export async function addContactMessage(
+  msg: ContactMessage
+): Promise<ContactMessage[]> {
   const current = readLocal<ContactMessage[]>(KEYS.MESSAGES, []);
   const next = [msg, ...current];
-  writeLocal(KEYS.MESSAGES, next);
-
-  if (isSupabaseConfigured && supabase) {
-    try {
-      await supabase.from("portfolio_messages").insert({ id: msg.id, payload: msg });
-    } catch {
-      // Local copy already persisted
-    }
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(KEYS.MESSAGES, JSON.stringify(next));
   }
+  notifySync();
   return next;
-}
-
-export async function resetAllPortfolioData(): Promise<{
-  projects: Project[];
-  posts: BlogPost[];
-}> {
-  writeLocal(KEYS.PROJECTS, INITIAL_PROJECTS);
-  writeLocal(KEYS.POSTS, INITIAL_POSTS);
-  return { projects: INITIAL_PROJECTS, posts: INITIAL_POSTS };
 }
 
 // Simple Admin Password Auth Helpers
@@ -247,4 +280,3 @@ export function saveStoredTheme(theme: "dark" | "light") {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(KEYS.THEME, theme);
 }
-

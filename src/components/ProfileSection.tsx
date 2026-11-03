@@ -2,14 +2,15 @@
 
 import React from "react";
 import { Briefcase, GraduationCap, MapPin } from "lucide-react";
+import { GitHubActivity } from "@/components/GitHubActivity";
 import { SkillChart } from "@/components/SkillChart";
 import { StatCard } from "@/components/StatCard";
 import { usePortfolio } from "@/context/PortfolioContext";
-import { PROFILE_DATA, SKILLS_DATA, TIMELINE_DATA } from "@/data/seed";
+import { PROFILE_DATA, TIMELINE_DATA } from "@/data/seed";
 import { useReveal } from "@/hooks/useReveal";
 
 export function ProfileSection() {
-  const { stats } = usePortfolio();
+  const { stats, skills } = usePortfolio();
   const { ref, visible } = useReveal<HTMLElement>(0.08);
 
   return (
@@ -43,9 +44,8 @@ export function ProfileSection() {
         <StatCard
           label="Technologies used"
           value={stats.technologiesUsed}
-          suffix="+"
-          delta="Full stack + BI"
-          detail="Distinct languages, frameworks, and analytical tools applied."
+          delta={`${skills.length} categories`}
+          detail="Distinct languages, frameworks, and tools in my stack."
           accent="data"
         />
         <StatCard
@@ -158,8 +158,11 @@ export function ProfileSection() {
         </div>
       </div>
 
-      {/* Dual-Group SkillChart (Dev Stack + Data Stack) */}
-      <SkillChart skills={SKILLS_DATA} />
+      {/* Live GitHub Contribution Graph */}
+      <GitHubActivity />
+
+      {/* Technical Stack grouped by use */}
+      <SkillChart skills={skills} />
     </section>
   );
 }
